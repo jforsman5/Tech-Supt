@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FleetOps – Tarbit Wave (layout + dagliga anteckningar)</title>
+<link rel="icon" href="data:," />
+<style>
+  :root{
+    --bg1:#050e1c; --bg2:#0a1e38; --bg3:#0f2e55;
+    --panel:#0f203a; --text:#eef5ff; --muted:#a9c0de;
+    --line:rgba(255,255,255,.14);
+    --accent:#39c0c8; --accent2:#75e0a1;
+    --radius:16px; --shadow:0 14px 40px rgba(0,0,0,.38);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; background: radial-gradient(1400px 900px at 80% -10%, var(--bg3) 0%, var(--bg2) 55%, var(--bg1) 100%);
+    color:var(--text); font:16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+  }
+  #bgCanvas{position:fixed; inset:0; z-index:-2}
+
+  .wrap{max-width:1680px; margin:0 auto; padding:18px}
+  header{display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px}
+  h1{margin:0; font-size:clamp(22px,3vw,34px)}
+  .badge{background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#062132; padding:7px 12px; border-radius:999px; font-weight:900; box-shadow:var(--shadow)}
+
+  .controls{display:flex; flex-wrap:wrap; gap:10px; align-items:center}
+  .btn{border:1px solid var(--line); background:linear-gradient(180deg, rgba(255,255,255,.1), rgba(255,255,255,.03)); color:var(--text);
+       padding:10px 14px; border-radius:14px; cursor:pointer; font-weight:700}
+  .btn.accent{border-color:transparent; background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#062132}
+  .btn.good{background:linear-gradient(135deg,#38d39f,#8affd1); border-color:transparent; color:#062132}
+  .btn.bad{background:linear-gradient(135deg,#ff6b6b,#ff8fab); border-color:transparent; color:#062132}
+  .pill{background:rgba(255,255,255,.1); border:1px solid var(--line); padding:6px 11px; border-radius:999px}
+  .small{color:var(--muted); font-size:13.5px}
+
+  /* Workspace with free widgets */
+  .workspace{
+    position:relative; height: calc(100vh - 120px); min-height:720px;
+    border:1px dashed rgba(255,255,255,.12); border-radius:var(--radius); padding:8px;
+    overflow:hidden;
+  }
+  .widget{
+    position:absolute; background:rgba(255,255,255,.06); border:1px solid var(--line);
+    border-radius:var(--radius); box-shadow:var(--shadow); backdrop-filter:saturate(120%) blur(3px);
+    display:flex; flex-direction:column; min-width:260px; min-height:160px;
+  }
+  .w-header{
+    display:flex; justify-content:space-between; align-items:center; gap:8px;
+    padding:10px 12px; border-bottom:1px solid var(--line); cursor:default; user-select:none;
+    background:linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.03));
+    border-top-left-radius:var(--radius); border-top-right-radius:var(--radius);
+  }
+  .w-body{padding:12px; overflow:auto}
+  .drag-hint{opacity:.6}
+  .resizer{position:absolute; right:6px; bottom:6px; width:14px; height:14px; border-right:2px solid #aee; border-bottom:2px solid #aee; opacity:.8; cursor:nwse-resize; display:none}
+  .widget.unlocked .resizer{display:block}
+  .widget.unlocked .w-header{cursor:move}
+
+  /* Tables */
+  table{width:100%; border-collapse:separate; border-spacing:0 8px}
+  th{color:#bcd0ef; font-size:13px; text-align:left; padding:4px 6px}
+  td{background:rgba(255,255,255,.06); padding:8px 10px}
+
+  /* Inputs */
+  input, select, textarea{width:100%; padding:10px 12px; border-radius:12px; border:1px solid var(--line); background:rgba(255,255,255,.1); color:#000 !important}
+  input::placeholder, textarea::placeholder{color:#333 !important}
+  textarea{min-height:80px}
+
+  /* Calendar (big + square) */
+  .cal-grid{display:grid; grid-template-columns: repeat(7, 1fr); gap:8px}
+  .cal-cell{border:1px solid var(--line); border-radius:12px; background:rgba(255,255,255,.07); aspect-ratio:1/1; padding:8px; cursor:pointer; overflow:hidden}
+  .cal-day{font-weight:800; opacity:.85; margin-bottom:6px}
+  .cal-event{font-size:12.5px; background:rgba(255,255,255,.12); border:1px solid var(--line); padding:3px 5px; border-radius:8px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis}
+  .cal-today{outline:2px solid var(--accent2)}
+
+  /* Day drawer */
+  #dayDrawer{position:fixed; top:0; right:0; width:min(560px, 92vw); height:100%; background:#0a1730; border-left:1px solid var(--line);
+             transform:translateX(100%); transition:.25s ease; z-index:5; box-shadow: -12px 0 40px rgba(0,0,0,.45)}
+  #dayDrawer.open{transform:translateX(0)}
+  #dayDrawer .head{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:14px 16px; border-bottom:1px solid var(--line)}
+  #dayDrawer .content{padding:14px; height:calc(100% - 58px); overflow:auto}
+
+  /* Daily notes list */
+  .note-row{display:grid; grid-template-columns: 28px 1fr auto; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--line); border-radius:12px; background:rgba(255,255,255,.06); margin:6px 0}
+  .dot{width:18px; height:18px; border-radius:999px; border:2px solid #9ed; cursor:pointer; position:relative}
+  .dot.done{background:radial-gradient(circle at 50% 50%, #7de0b8 0%, #38d39f 60%, #1a7c5e 100%); border-color:#bff2dc}
+  .note-row .text.done{opacity:.6; text-decoration:line-through}
+  .del{cursor:pointer; opacity:.8}
+
+  .toast{position:fixed; left:50%; bottom:18px; transform:translateX(-50%); background:#0d1220; border:1px solid var(--line); padding:10px 14px; border-radius:999px; opacity:0; transition:opacity .3s}
+  .toast.show{opacity:1}
+</style>
+</head>
+<body>
+<canvas id="bgCanvas"></canvas>
+
+<div class="wrap">
+  <header>
+    <div style="display:flex; gap:12px; align-items:center">
+      <span class="badge">FleetOps</span>
+      <h1>Superintendent – Dagligt verktyg</h1>
+    </div>
+    <div class="controls">
+      <button class="btn" id="toggleLayout">Lås/öppna layout</button>
+      <button class="btn bad" id="resetLayout">Återställ layout</button>
+      <button class="btn" id="pdfBtn">PDF‑rapport</button>
+      <button class="btn accent" id="exportBtn">Exportera</button>
+    </div>
+  </header>
+
+  <div class="workspace" id="workspace">
+    <!-- Calendar big by default -->
+    <section class="widget" id="wCalendar">
+      <div class="w-header"><b>Kalender</b><span class="small drag-hint">Dra/ändra storlek</span></div>
+      <div class="w-body">
+        <div class="controls" style="justify-content:space-between">
+          <div class="controls">
+            <button class="btn" id="prevMonth">⟵</button>
+            <div class="pill" id="monthLabel">—</div>
+            <button class="btn" id="nextMonth">⟶</button>
+          </div>
+          <button class="btn good" id="addEvent">+ Nytt event</button>
+        </div>
+        <div class="small" style="margin:6px 0 8px">Mån • Tis • Ons • Tors • Fre • Lör • Sön</div>
+        <div class="cal-grid" id="calGrid"></div>
+      </div>
+      <div class="resizer"></div>
+    </section>
+
+    <section class="widget" id="wIssues">
+      <div class="w-header"><b>Fel & åtgärder</b><button class="btn good" id="addIssue">+ Lägg till</button></div>
+      <div class="w-body">
+        <table>
+          <thead><tr><th>Kat</th><th>Rubrik</th><th>Prio</th><th>Ansvar</th><th>Förf</th><th>Status</th></tr></thead>
+          <tbody id="issuesTbl"></tbody>
+        </table>
+      </div>
+      <div class="resizer"></div>
+    </section>
+
+    <section class="widget" id="wTodos">
+      <div class="w-header"><b>Att göra</b><button class="btn good" id="addTodo">+ Lägg till</button></div>
+      <div class="w-body">
+        <table>
+          <thead><tr><th>Uppgift</th><th>Förf</th><th>Status</th></tr></thead>
+          <tbody id="todoTbl"></tbody>
+        </table>
+      </div>
+      <div class="resizer"></div>
+    </section>
+
+    <section class="widget" id="wUpcoming">
+      <div class="w-header"><b>Kommande förfallo­datum</b></div>
+      <div class="w-body" id="upcoming"></div>
+      <div class="resizer"></div>
+    </section>
+
+    <section class="widget" id="wNotes">
+      <div class="w-header"><b>Snabbanteckning</b><button class="btn" id="noteSave">Spara</button></div>
+      <div class="w-body"><textarea id="scratch" placeholder="Anteckningar..."></textarea></div>
+      <div class="resizer"></div>
+    </section>
+
+    <section class="widget" id="wDaily">
+      <div class="w-header"><b>Dagliga anteckningar</b><span class="small" id="dailyDate"></span></div>
+      <div class="w-body">
+        <div class="controls">
+          <input id="dailyInput" placeholder="Ny punkt..." />
+          <button class="btn good" id="dailyAdd">Lägg till</button>
+          <input id="dailyPicker" type="date" style="margin-left:auto">
+        </div>
+        <div id="dailyList" style="margin-top:8px"></div>
+      </div>
+      <div class="resizer"></div>
+    </section>
+  </div>
+</div>
+
+<!-- Day drawer -->
+<aside id="dayDrawer">
+  <div class="head">
+    <div>
+      <div id="dayTitle" style="font-weight:900; font-size:18px">Händelser</div>
+      <div class="small" id="daySub"></div>
+    </div>
+    <div class="controls">
+      <button class="btn good" id="dayAdd">+ Nytt event</button>
+      <button class="btn bad" id="dayClose">Stäng</button>
+    </div>
+  </div>
+  <div class="content" id="dayList"></div>
+</aside>
+
+<div class="toast" id="toast">Sparat</div>
+
+<!-- Dialogs -->
+<dialog id="dlgIssue" style="max-width:880px">
+  <form method="dialog" class="w-body" style="padding:18px">
+    <div class="controls" style="justify-content:space-between"><b>Fel/Åtgärd</b><button class="btn bad" value="cancel">Stäng</button></div>
+    <div class="controls"><input id="iCat" placeholder="Kategori (Machinery/Deck/...)" style="max-width:220px"><input id="iPrio" placeholder="Prio (Low/Med/High/Critical)" style="max-width:220px"></div>
+    <input id="iTitle" placeholder="Rubrik">
+    <div class="controls"><input id="iOwner" placeholder="Ansvarig"><input id="iDue" type="date" placeholder="Förfallodatum" style="max-width:220px"></div>
+    <textarea id="iDesc" placeholder="Beskrivning"></textarea>
+    <div class="controls"><button class="btn" id="issueDelete" style="margin-right:auto; display:none">Ta bort</button><button class="btn good" id="issueSave">Spara</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlgTodo" style="max-width:760px">
+  <form method="dialog" class="w-body" style="padding:18px">
+    <div class="controls" style="justify-content:space-between"><b>Uppgift</b><button class="btn bad" value="cancel">Stäng</button></div>
+    <div class="controls"><input id="tDue" type="date" style="max-width:220px"><input id="tTitle" placeholder="Titel"></div>
+    <textarea id="tNote" placeholder="Notering"></textarea>
+    <div class="controls"><button class="btn" id="todoDelete" style="margin-right:auto; display:none">Ta bort</button><button class="btn good" id="todoSave">Spara</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlgEvent" style="max-width:880px">
+  <form method="dialog" class="w-body" style="padding:18px">
+    <div class="controls" style="justify-content:space-between"><b>Event</b><button class="btn bad" value="cancel">Stäng</button></div>
+    <div class="controls"><input id="eDate" type="date" style="max-width:220px"><input id="eTitle" placeholder="Titel"></div>
+    <textarea id="eDesc" placeholder="Beskrivning"></textarea>
+    <div class="controls"><input id="eFiles" type="file" multiple><div id="eFilesList" class="small"></div></div>
+    <div class="controls"><button class="btn" id="eventDelete" style="margin-right:auto; display:none">Ta bort</button><button class="btn good" id="eventSave">Spara</button></div>
+  </form>
+</dialog>
+
+<script>
+/* ---------- Animated bg ---------- */
+const canvas = document.getElementById('bgCanvas');
+const ctx = canvas.getContext('2d'); let W,H,particles=[];
+function resize(){ W=canvas.width=innerWidth; H=canvas.height=innerHeight; }
+resize(); addEventListener('resize', resize);
+function initParticles(n=100){
+  particles = Array.from({length:n}, ()=> ({ x: Math.random()*W, y: Math.random()*H*0.9, vx:(Math.random()-.5)*.4, vy:(Math.random()-.5)*.4, r:1+Math.random()*2 }));
+}
+initParticles();
+(function tick(){
+  ctx.clearRect(0,0,W,H);
+  ctx.globalAlpha=.05;
+  for(let i=0;i<18;i++){ ctx.beginPath(); let y=(i/18)*H*.9+20; ctx.moveTo(0,y);
+    for(let x=0;x<=W;x+=40) ctx.lineTo(x, y + Math.sin((x+i*18)/160)*6);
+    ctx.strokeStyle='#9cc6ff'; ctx.stroke(); }
+  ctx.globalAlpha=1;
+  particles.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; if(p.x<0||p.x>W)p.vx*=-1; if(p.y<0||p.y>H)p.vy*=-1; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fillStyle='#7fc8ff'; ctx.fill(); });
+  for(let i=0;i<particles.length;i++)for(let j=i+1;j<particles.length;j++){ const a=particles[i],b=particles[j],dx=a.x-b.x,dy=a.y-b.y,d=dx*dx+dy*dy; if(d<140*140){ const o=1-d/(140*140); ctx.globalAlpha=o*.25; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.strokeStyle='#7fc8ff'; ctx.stroke(); ctx.globalAlpha=1; } }
+  requestAnimationFrame(tick);
+})();
+
+/* ---------- State ---------- */
+const STORE="fleetops_layout_daily_v1";
+const defaultLayout={
+  wCalendar:{x:10,y:10,w:980,h:720},
+  wIssues:{x:1000,y:10,w:670,h:340},
+  wTodos:{x:1000,y:360,w:330,h:330},
+  wUpcoming:{x:1340,y:360,w:330,h:330},
+  wNotes:{x:10,y:740,w:640,h:200},
+  wDaily:{x:660,y:740,w:480,h:200}
+};
+const state = load() || {
+  layout: defaultLayout,
+  issues:[], todos:[], events:[], scratch:"", dailyNotes:{},
+  calYear: new Date().getFullYear(), calMonth: new Date().getMonth()
+};
+function save(){ localStorage.setItem(STORE, JSON.stringify(state)); toast("Sparat"); renderAll(); }
+function load(){ try{ return JSON.parse(localStorage.getItem(STORE)); }catch{ return null; } }
+const $ = s=>document.querySelector(s);
+const el = (t,p={},...c)=>{ const n=Object.assign(document.createElement(t),p); c.forEach(x=>n.append(x instanceof Node?x:document.createTextNode(x))); return n; };
+function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),1200); }
+function today(){ return new Date().toISOString().slice(0,10); }
+function fmtDate(d){ try{ const x=new Date(d+"T12:00"); return x.toLocaleDateString(); }catch{ return d; } }
+function daysTo(d){ const a=new Date(d+"T00:00"), b=new Date(); return Math.ceil((a-b)/86400000); }
+
+/* ---------- Layout: drag/resize ---------- */
+let layoutUnlocked=false;
+$("#toggleLayout").onclick=()=>{ layoutUnlocked=!layoutUnlocked; document.querySelectorAll(".widget").forEach(w=> w.classList.toggle("unlocked", layoutUnlocked)); toast(layoutUnlocked?"Layout upplåst":"Layout låst"); };
+$("#resetLayout").onclick=()=>{ if(confirm("Återställ layout till standard?")){ state.layout = JSON.parse(JSON.stringify(defaultLayout)); save(); } };
+
+function applyLayout(){
+  Object.entries(state.layout).forEach(([id,box])=>{
+    const w=$("#"+id); if(!w) return;
+    w.style.left=box.x+"px"; w.style.top=box.y+"px"; w.style.width=box.w+"px"; w.style.height=box.h+"px";
+  });
+}
+applyLayout();
+
+function enableDragResize(widget){
+  const head = widget.querySelector(".w-header");
+  const res = widget.querySelector(".resizer");
+  let startX,startY,startLeft,startTop,startW,startH,drag=false,resize=false;
+
+  head.addEventListener("pointerdown",(e)=>{
+    if(!layoutUnlocked) return;
+    drag=true; widget.setPointerCapture(e.pointerId);
+    startX=e.clientX; startY=e.clientY;
+    const r=widget.getBoundingClientRect(); startLeft=r.left - workspace.getBoundingClientRect().left; startTop=r.top - workspace.getBoundingClientRect().top;
+  });
+  res.addEventListener("pointerdown",(e)=>{
+    if(!layoutUnlocked) return;
+    resize=true; widget.setPointerCapture(e.pointerId);
+    startX=e.clientX; startY=e.clientY; const r=widget.getBoundingClientRect(); startW=r.width; startH=r.height;
+  });
+  widget.addEventListener("pointermove",(e)=>{
+    if(drag){
+      const dx=e.clientX-startX, dy=e.clientY-startY;
+      const x=Math.max(0, Math.min(dx+startLeft, workspace.clientWidth - widget.offsetWidth));
+      const y=Math.max(0, Math.min(dy+startTop, workspace.clientHeight - widget.offsetHeight));
+      widget.style.left=x+"px"; widget.style.top=y+"px";
+    }else if(resize){
+      const dx=e.clientX-startX, dy=e.clientY-startY;
+      const w=Math.max(260, startW+dx), h=Math.max(160, startH+dy);
+      widget.style.width=w+"px"; widget.style.height=h+"px";
+    }
+  });
+  widget.addEventListener("pointerup",()=>{
+    if(drag||resize){
+      drag=false; resize=false;
+      const r=widget.getBoundingClientRect(), base=workspace.getBoundingClientRect();
+      state.layout[widget.id]={x:r.left-base.left, y:r.top-base.top, w:r.width, h:r.height};
+      localStorage.setItem(STORE, JSON.stringify(state));
+    }
+  });
+}
+document.querySelectorAll(".widget").forEach(enableDragResize);
+
+/* ---------- Issues ---------- */
+const issuesTbl=$("#issuesTbl");
+$("#addIssue").onclick=()=> openIssue();
+function openIssue(issue=null){
+  const dlg=$("#dlgIssue");
+  $("#iCat").value=issue?.cat||"";
+  $("#iPrio").value=issue?.prio||"";
+  $("#iTitle").value=issue?.title||"";
+  $("#iOwner").value=issue?.owner||"";
+  $("#iDue").value=issue?.due||"";
+  $("#iDesc").value=issue?.desc||"";
+  dlg.dataset.id=issue?.id||"";
+  $("#issueDelete").style.display = issue? "inline-flex":"none";
+  dlg.showModal();
+}
+$("#issueSave").onclick=(e)=>{ e.preventDefault();
+  const obj={ id: $("#dlgIssue").dataset.id || crypto.randomUUID(), cat:$("#iCat").value||"Misc", prio:$("#iPrio").value||"Low", title:$("#iTitle").value||"(utan titel)", owner:$("#iOwner").value||"", due:$("#iDue").value||"", desc:$("#iDesc").value||"", status:"Open" };
+  if($("#dlgIssue").dataset.id){ const i=state.issues.findIndex(x=>x.id===obj.id); state.issues[i]={...state.issues[i], ...obj}; } else { state.issues.push(obj); }
+  save(); $("#dlgIssue").close();
+};
+$("#issueDelete").onclick=(e)=>{ e.preventDefault(); const id=$("#dlgIssue").dataset.id; state.issues=state.issues.filter(x=>x.id!==id); save(); $("#dlgIssue").close(); };
+function renderIssues(){
+  issuesTbl.innerHTML="";
+  const rows = state.issues.filter(x=>x.status!=="Closed").sort((a,b)=> (a.due||"").localeCompare(b.due||""));
+  if(rows.length===0){ issuesTbl.append(el("tr",{}, el("td",{colSpan:6}, "Inga öppna poster"))); return; }
+  rows.forEach(r=>{
+    const tr=el("tr",{},
+      el("td",{}, r.cat),
+      el("td",{}, el("span",{className:"link", onclick:()=>openIssue(r)}, r.title)),
+      el("td",{}, r.prio),
+      el("td",{}, r.owner||"-"),
+      el("td",{}, r.due?fmtDate(r.due):"-"),
+      el("td",{}, r.status)
+    ); issuesTbl.append(tr);
+  });
+}
+
+/* ---------- Todos ---------- */
+const todoTbl=$("#todoTbl");
+$("#addTodo").onclick=()=> openTodo();
+function openTodo(todo=null){
+  const dlg=$("#dlgTodo");
+  $("#tDue").value=todo?.due||"";
+  $("#tTitle").value=todo?.title||"";
+  $("#tNote").value=todo?.note||"";
+  dlg.dataset.id=todo?.id||"";
+  $("#todoDelete").style.display = todo? "inline-flex":"none";
+  dlg.showModal();
+}
+$("#todoSave").onclick=(e)=>{ e.preventDefault();
+  const obj={ id: $("#dlgTodo").dataset.id || crypto.randomUUID(), title:$("#tTitle").value||"(utan titel)", note:$("#tNote").value||"", due:$("#tDue").value||"", status:"Open" };
+  if($("#dlgTodo").dataset.id){ const i=state.todos.findIndex(x=>x.id===obj.id); state.todos[i]={...state.todos[i], ...obj}; } else { state.todos.push(obj); }
+  save(); $("#dlgTodo").close();
+};
+$("#todoDelete").onclick=(e)=>{ e.preventDefault(); const id=$("#dlgTodo").dataset.id; state.todos=state.todos.filter(x=>x.id!==id); save(); $("#dlgTodo").close(); };
+function renderTodos(){
+  todoTbl.innerHTML="";
+  const rows = state.todos.filter(x=>x.status!=="Done").sort((a,b)=> (a.due||"").localeCompare(b.due||""));
+  if(rows.length===0){ todoTbl.append(el("tr",{}, el("td",{colSpan:3}, "Allt klart 🎉"))); return; }
+  rows.forEach(r=> todoTbl.append(el("tr",{}, el("td",{}, r.title), el("td",{}, r.due?fmtDate(r.due):"-"), el("td",{}, r.status))));
+}
+
+/* ---------- Calendar ---------- */
+const calGrid=$("#calGrid"), monthLabel=$("#monthLabel");
+$("#prevMonth").onclick=()=> changeMonth(-1);
+$("#nextMonth").onclick=()=> changeMonth(1);
+$("#addEvent").onclick=()=> openEvent();
+function changeMonth(delta){ let m=state.calMonth+delta, y=state.calYear; if(m<0){m=11;y--;}else if(m>11){m=0;y++;} state.calMonth=m; state.calYear=y; save(); }
+function renderCalendar(){
+  const y=state.calYear, m=state.calMonth;
+  const first=new Date(y,m,1); const firstDay=(first.getDay()+6)%7; const daysIn=new Date(y,m+1,0).getDate();
+  const monthNames=["Jan","Feb","Mar","Apr","Maj","Jun","Jul","Aug","Sep","Okt","Nov","Dec"];
+  monthLabel.textContent=`${monthNames[m]} ${y}`;
+  calGrid.innerHTML="";
+  for(let i=0;i<firstDay;i++) calGrid.append(el("div",{className:"cal-cell", style:"visibility:hidden"}));
+  for(let d=1; d<=daysIn; d++){
+    const ds=`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const cell=el("div",{className:"cal-cell", onclick:()=>openDay(ds)});
+    cell.append(el("div",{className:"cal-day"}, String(d)));
+    const todays=state.events.filter(ev=>ev.date===ds);
+    todays.slice(0,4).forEach(ev=> cell.append(el("div",{className:"cal-event"}, `• ${ev.title}`)));
+    if(todays.length>4) cell.append(el("div",{className:"small"}, `+${todays.length-4} till`));
+    if(ds===today()) cell.classList.add("cal-today");
+    calGrid.append(cell);
+  }
+}
+/* Day drawer */
+function openDay(ds){
+  const drawer=$("#dayDrawer"); drawer.classList.add("open");
+  $("#dayTitle").textContent=fmtDate(ds);
+  $("#daySub").textContent="Planerat denna dag";
+  const list=$("#dayList"); list.innerHTML="";
+  const items=state.events.filter(e=>e.date===ds);
+  if(items.length===0) list.append(el("div",{}, "Inget planerat."));
+  items.forEach(ev=>{
+    const box=el("div",{className:"controls", style:"justify-content:space-between; border:1px solid var(--line); border-radius:12px; padding:10px; margin:6px 0"},
+      el("div",{}, el("b",{}, ev.title), el("div",{className:"small"}, ev.desc||"")),
+      el("div",{}, el("button",{className:"btn", onclick:()=>openEvent(ev)},"Öppna"))
+    ); list.append(box);
+  });
+  $("#dayAdd").onclick=()=> openEvent({date:ds});
+}
+$("#dayClose").onclick=()=> $("#dayDrawer").classList.remove("open");
+
+/* Event dialog */
+function openEvent(ev=null){
+  const dlg=$("#dlgEvent");
+  $("#eDate").value = ev?.date || today();
+  $("#eTitle").value = ev?.title || "";
+  $("#eDesc").value = ev?.desc || "";
+  dlg.dataset.id = ev?.id || "";
+  const list=$("#eFilesList"); list.innerHTML="";
+  (ev?.files||[]).forEach(f=> list.append(el("div",{}, el("a",{href:f.data, download:f.name, target:"_blank"}, "📎 "+f.name))));
+  $("#eFiles").value="";
+  $("#eFiles").onchange=(e)=>{
+    const files=Array.from(e.target.files||[]);
+    Promise.all(files.map(file=>new Promise(res=>{ const r=new FileReader(); r.onload=()=>res({name:file.name,type:file.type,data:r.result}); r.readAsDataURL(file);})))
+      .then(arr=>{ arr.forEach(f=> list.append(el("div",{}, el("a",{href:f.data, download:f.name, target:"_blank"}, "📎 "+f.name)))); list.dataset.newfiles=JSON.stringify(arr); });
+  };
+  dlg.showModal();
+}
+$("#eventSave").onclick=(e)=>{ e.preventDefault();
+  const id=$("#dlgEvent").dataset.id || crypto.randomUUID();
+  let files=[]; try{ files=JSON.parse($("#eFilesList").dataset.newfiles||"[]"); }catch{}
+  const obj={ id, date:$("#eDate").value, title:$("#eTitle").value||"(utan titel)", desc:$("#eDesc").value||"", files: ($("#dlgEvent").dataset.id? mergeFiles(id, files): files) };
+  if($("#dlgEvent").dataset.id){ const i=state.events.findIndex(x=>x.id===id); state.events[i]={...state.events[i], ...obj}; } else { state.events.push(obj); }
+  save(); $("#dlgEvent").close();
+};
+function mergeFiles(id, newFiles){ const ex=state.events.find(x=>x.id===id)?.files||[]; return ex.concat(newFiles||[]); }
+$("#eventDelete").onclick=(e)=>{ e.preventDefault(); const id=$("#dlgEvent").dataset.id; state.events=state.events.filter(x=>x.id!==id); save(); $("#dlgEvent").close(); };
+
+/* ---------- Upcoming ---------- */
+function renderUpcoming(){
+  const holder=$("#upcoming"); holder.innerHTML="";
+  const list=[...state.issues.filter(x=>x.status!=="Closed"), ...state.todos.filter(x=>x.status!=="Done")]
+    .filter(x=>x.due).sort((a,b)=> (a.due||"").localeCompare(b.due||"")).slice(0,30);
+  if(list.length===0){ holder.append(el("div",{}, "Inget inom 30 dagar.")); return; }
+  list.forEach(x=>{
+    const d=daysTo(x.due), color= d<=0? "bad" : d<=7? "warn":"good", tag=`${d<=0? "Försenad "+Math.abs(d):"Om "+d} d`;
+    holder.append(el("div",{className:"controls", style:"justify-content:space-between; padding:8px 10px; border:1px solid var(--line); border-radius:12px; margin-bottom:8px"},
+      el("div",{}, el("b",{}, x.title||"(utan titel)"), el("div",{className:"small"}, x.owner||x.note||"")),
+      el("span",{className:"pill"}, tag)
+    ));
+  });
+}
+
+/* ---------- Scratch ---------- */
+$("#noteSave").onclick=()=>{ state.scratch=$("#scratch").value; save(); };
+
+/* ---------- Daily Notes ---------- */
+const dailyInput=$("#dailyInput"), dailyList=$("#dailyList"), dailyPicker=$("#dailyPicker"), dailyDate=$("#dailyDate");
+dailyPicker.value = today();
+dailyDate.textContent = "• " + new Date().toLocaleDateString();
+function getDayNotes(ds){ if(!state.dailyNotes[ds]) state.dailyNotes[ds]=[]; return state.dailyNotes[ds]; }
+function renderDaily(ds){
+  dailyList.innerHTML="";
+  const items=getDayNotes(ds);
+  if(items.length===0) dailyList.append(el("div",{className:"small"}, "Inga punkter."));
+  items.forEach(it=>{
+    const row=el("div",{className:"note-row"},
+      el("div",{className:"dot"+(it.done?" done":""), onclick:()=>{ it.done=!it.done; save(); }}),
+      el("div",{className:"text"+(it.done?" done":""), contentEditable:true, oninput:(e)=>{ it.text=e.target.textContent; }} , it.text),
+      el("div",{className:"del", onclick:()=>{ state.dailyNotes[ds]=items.filter(x=>x.id!==it.id); save(); }}, "🗑")
+    );
+    dailyList.append(row);
+  });
+}
+dailyPicker.addEventListener("change", ()=>{
+  dailyDate.textContent = "• " + new Date(dailyPicker.value+"T12:00").toLocaleDateString();
+  renderDaily(dailyPicker.value);
+});
+document.getElementById("dailyAdd").onclick = ()=>{
+  const t=dailyInput.value.trim(); if(!t) return;
+  const ds=dailyPicker.value||today();
+  getDayNotes(ds).push({id:crypto.randomUUID(), text:t, done:false});
+  dailyInput.value=""; save();
+};
+
+/* ---------- Export (state) ---------- */
+$("#exportBtn").onclick=()=>{
+  const blob = new Blob([JSON.stringify(state,null,2)],{type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = el("a",{href:url,download:"fleetops_state.json"}); document.body.append(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+};
+
+/* ---------- PDF report (print) ---------- */
+$("#pdfBtn").onclick=()=>{
+  const w=window.open("", "_blank");
+  const css=`<style>body{font:14px/1.5 system-ui; color:#111; padding:24px} h1{margin:0 0 6px} .box{border:1px solid #ddd; border-radius:10px; padding:12px; margin:12px 0} table{width:100%; border-collapse:collapse} th,td{border:1px solid #e5e5e5; padding:6px 8px; text-align:left}</style>`;
+  let html=`<h1>FleetOps – Statusrapport</h1><div>${new Date().toLocaleString()}</div>`;
+  const sections=[["Öppna fel", state.issues.filter(x=>x.status!=="Closed")],
+                  ["Att göra", state.todos.filter(x=>x.status!=="Done")]];
+  sections.forEach(([title,arr])=>{
+    html += `<div class="box"><h3>${title} (${arr.length})</h3>`;
+    if(arr.length===0){ html+="<div>Inga</div>"; } else {
+      html+=`<table><thead><tr><th>Titel</th><th>Förfallo</th><th>Info</th></tr></thead><tbody>`;
+      arr.forEach(x=> html+=`<tr><td>${x.title||x.cat}</td><td>${x.due?fmtDate(x.due):"-"}</td><td>${x.owner||x.note||""}</td></tr>`);
+      html+=`</tbody></table>`;
+    }
+    html+=`</div>`;
+  });
+  const evs=[...state.events].sort((a,b)=>a.date.localeCompare(b.date));
+  html+=`<div class="box"><h3>Kalender (${evs.length})</h3>`;
+  if(evs.length===0){ html+="<div>Inga</div>"; } else {
+    html+=`<table><thead><tr><th>Datum</th><th>Titel</th><th>Beskrivning</th><th>Bilagor</th></tr></thead><tbody>`;
+    evs.forEach(ev=> html+=`<tr><td>${fmtDate(ev.date)}</td><td>${ev.title}</td><td>${ev.desc||""}</td><td>${(ev.files||[]).length||"-"}</td></tr>`);
+    html+=`</tbody></table>`;
+  }
+  html+=`</div>`;
+  w.document.write(`<html><head><title>Statusrapport</title>${css}</head><body>${html}</body></html>`);
+  w.document.close(); setTimeout(()=>w.print(), 250);
+};
+
+/* ---------- Renderers ---------- */
+function renderIssuesTodos(){ renderIssues(); renderTodos(); renderUpcoming(); }
+function renderAll(){ applyLayout(); renderCalendar(); renderIssuesTodos(); $("#scratch").value=state.scratch||""; renderDaily(dailyPicker.value||today()); }
+renderAll();
+</script>
+</body>
+</html>
